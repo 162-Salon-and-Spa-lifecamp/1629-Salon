@@ -2,10 +2,10 @@ import { User, Product, Transaction, AttendanceRecord } from '../types';
 import { MOCK_USERS, MOCK_CATALOG } from '../constants';
 
 const KEYS = {
-  USERS: 'salonsync_users',
-  PRODUCTS: 'salonsync_products',
-  TRANSACTIONS: 'salonsync_transactions',
-  ATTENDANCE: 'salonsync_attendance'
+  USERS: '1629salon_users',
+  PRODUCTS: '1629salon_products',
+  TRANSACTIONS: '1629salon_transactions',
+  ATTENDANCE: '1629salon_attendance'
 };
 
 export const storage = {

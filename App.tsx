@@ -31,7 +31,7 @@ const LoginScreen: React.FC = () => {
     return (
       <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4 text-white">
         <Loader2 className="w-12 h-12 text-indigo-500 animate-spin mb-4" />
-        <h2 className="text-xl font-bold">Connecting to SalonSync...</h2>
+        <h2 className="text-xl font-bold">Connecting to 1629 Salon & Spa...</h2>
         <p className="text-slate-400 mt-2">Checking database connection</p>
       </div>
     );
@@ -96,7 +96,7 @@ const LoginScreen: React.FC = () => {
             <Scissors className="w-8 h-8 text-indigo-600 dark:text-indigo-400" />
           </div>
         </div>
-        <h1 className="text-2xl font-bold text-center text-slate-900 dark:text-white mb-2">Welcome to SalonSync</h1>
+        <h1 className="text-2xl font-bold text-center text-slate-900 dark:text-white mb-2">Welcome to 1629 Salon & Spa</h1>
         <p className="text-center text-slate-500 dark:text-slate-400 mb-8">Select your account to continue</p>
 
         <form onSubmit={handleLogin} className="space-y-6">

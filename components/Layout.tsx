@@ -41,9 +41,9 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
         border-r border-slate-800 dark:border-slate-800
       `}>
         <div className="p-6 border-b border-slate-800 flex justify-between items-center">
-          <div className="flex items-center gap-2 font-bold text-xl">
+          <div className="flex items-center gap-2 font-bold text-lg">
             <Scissors className="w-6 h-6 text-indigo-400" />
-            <span>SalonSync</span>
+            <span>1629 Salon & Spa</span>
           </div>
           <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden text-slate-400">
             <X className="w-6 h-6" />
@@ -107,7 +107,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
         <header className="lg:hidden bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 p-4 flex justify-between items-center transition-colors">
           <div className="flex items-center gap-2 font-bold text-slate-800 dark:text-white">
             <Scissors className="w-5 h-5 text-indigo-600" />
-            SalonSync
+            1629 Salon & Spa
           </div>
           <button onClick={() => setIsSidebarOpen(true)} className="text-slate-600 dark:text-slate-300">
             <Menu className="w-6 h-6" />

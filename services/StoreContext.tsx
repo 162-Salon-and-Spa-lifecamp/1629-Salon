@@ -63,7 +63,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setAttendance(loadedAttendance.sort((a, b) => new Date(b.clockInTime).getTime() - new Date(a.clockInTime).getTime()));
         
         // Load Theme
-        const savedTheme = localStorage.getItem('salonsync_theme') as 'light' | 'dark';
+        const savedTheme = localStorage.getItem('1629salon_theme') as 'light' | 'dark';
         if (savedTheme) {
           setTheme(savedTheme);
           if (savedTheme === 'dark') document.documentElement.classList.add('dark');
@@ -107,7 +107,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const toggleTheme = () => {
     const newTheme = theme === 'light' ? 'dark' : 'light';
     setTheme(newTheme);
-    localStorage.setItem('salonsync_theme', newTheme);
+    localStorage.setItem('1629salon_theme', newTheme);
     if (newTheme === 'dark') {
       document.documentElement.classList.add('dark');
     } else {
