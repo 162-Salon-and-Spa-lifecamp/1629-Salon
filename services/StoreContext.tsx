@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, Product, Transaction, AttendanceRecord } from '../types';
-import { storage } from './storage';
+import { supabase } from './supabase';
 import { MOCK_USERS, MOCK_CATALOG } from '../constants';
 
 interface StoreContextType {
@@ -14,10 +14,9 @@ interface StoreContextType {
   theme: 'light' | 'dark';
   
   // Actions
-  login: (userId: string, pin: string) => boolean;
-  logout: () => void;
+  login: (userId: string, pin: string) => Promise<boolean>;
+  logout: () => Promise<void>;
   recordTransaction: (transaction: Transaction) => Promise<void>;
-  toggleAttendance: (userId: string) => Promise<void>;
   toggleTheme: () => void;
   
   // CRUD Actions
@@ -45,62 +44,110 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [error, setError] = useState<string | null>(null);
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
 
-  // Initialize Data from LocalStorage
+  // Real-time subscriptions
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        setLoading(true);
-        const loadedUsers = storage.getUsers();
-        const loadedProducts = storage.getProducts();
-        const loadedTransactions = storage.getTransactions();
-        const loadedAttendance = storage.getAttendance();
-
-        setUsers(loadedUsers);
-        setProducts(loadedProducts);
-        // Sort transactions by date desc
-        setTransactions(loadedTransactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
-        // Sort attendance by clockInTime desc
-        setAttendance(loadedAttendance.sort((a, b) => new Date(b.clockInTime).getTime() - new Date(a.clockInTime).getTime()));
-        
-        // Load Theme
-        const savedTheme = localStorage.getItem('1629salon_theme') as 'light' | 'dark';
-        if (savedTheme) {
-          setTheme(savedTheme);
-          if (savedTheme === 'dark') document.documentElement.classList.add('dark');
+    const productsSubscription = supabase
+      .channel('custom-products-channel')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'products' },
+        (payload) => {
+          console.log('Products change received!', payload)
+          loadData();
         }
+      )
+      .subscribe();
 
-        setError(null);
-      } catch (err: any) {
-        console.error("Storage Load Error:", err);
-        setError("Failed to load local data: " + (err.message || "Unknown error"));
-      } finally {
-        setLoading(false);
-      }
+    const usersSubscription = supabase
+      .channel('custom-users-channel')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'users' },
+        (payload) => {
+          console.log('Users change received!', payload)
+          loadData();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(productsSubscription);
+      supabase.removeChannel(usersSubscription);
     };
-    
-    loadData();
   }, []);
 
-  // -- Persistence Helpers --
-  const saveUsers = (newUsers: User[]) => {
-    setUsers(newUsers);
-    storage.saveUsers(newUsers);
+  // Auth and Data Loading
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session) {
+        const { data: userData, error } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', session.user.id)
+          .single();
+
+        if (error) {
+          console.error('Error fetching user profile:', error);
+          setError('Could not fetch user profile.');
+          setCurrentUser(null);
+        } else {
+          setCurrentUser(userData as User);
+        }
+
+        loadData();
+      } else {
+        setCurrentUser(null);
+      }
+    });
+
+    // Initial load
+    loadData();
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+
+      const [
+        { data: usersData, error: usersError },
+        { data: productsData, error: productsError },
+        { data: transactionsData, error: transactionsError },
+        { data: attendanceData, error: attendanceError },
+      ] = await Promise.all([
+        supabase.from('users').select('*'),
+        supabase.from('products').select('*'),
+        supabase.from('transactions').select('*, transaction_items(*)'),
+        supabase.from('attendance').select('*'),
+      ]);
+
+      if (usersError) throw usersError;
+      if (productsError) throw productsError;
+      if (transactionsError) throw transactionsError;
+      if (attendanceError) throw attendanceError;
+
+      setUsers(usersData as User[]);
+      setProducts(productsData as Product[]);
+      setTransactions(transactionsData as any[]); // Adjust type later
+      setAttendance(attendanceData as AttendanceRecord[]);
+
+      // Load Theme
+      const savedTheme = localStorage.getItem('1629salon_theme') as 'light' | 'dark';
+      if (savedTheme) {
+        setTheme(savedTheme);
+        if (savedTheme === 'dark') document.documentElement.classList.add('dark');
+      }
+
+      setError(null);
+    } catch (err: any) {
+      console.error("Supabase Load Error:", err);
+      setError("Failed to load data from Supabase: " + (err.message || "Unknown error"));
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const saveProducts = (newProducts: Product[]) => {
-    setProducts(newProducts);
-    storage.saveProducts(newProducts);
-  };
-
-  const saveTransactions = (newTxs: Transaction[]) => {
-    setTransactions(newTxs);
-    storage.saveTransactions(newTxs);
-  };
-
-  const saveAttendanceRecords = (newRecs: AttendanceRecord[]) => {
-    setAttendance(newRecs);
-    storage.saveAttendance(newRecs);
-  };
 
   // -- Actions --
 
@@ -115,132 +162,101 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  const login = (userId: string, pin: string) => {
-    const user = users.find(u => u.id === userId && u.pin === pin);
-    if (user) {
-      setCurrentUser(user);
-      return true;
+  const login = async (userId: string, pin: string) => {
+    // This is a temporary solution for the demo.
+    // In a real application, you would have a more secure way of handling this.
+    const email = `${userId}@salon.local`;
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password: pin,
+    });
+
+    if (error) {
+      console.error('Login Error:', error.message);
+      return false;
     }
-    return false;
+    return true;
   };
 
-  const logout = () => {
+  const logout = async () => {
+    await supabase.auth.signOut();
     setCurrentUser(null);
   };
 
   const recordTransaction = async (tx: Transaction) => {
-    // 1. Add Transaction
-    const newTxs = [tx, ...transactions];
-    saveTransactions(newTxs);
-
-    // 2. Update Inventory
-    const newProducts = products.map(p => {
-      const soldItem = tx.items.find(i => i.id === p.id);
-      if (soldItem && p.isRetail && p.stockLevel !== undefined) {
-        return { 
-          ...p, 
-          stockLevel: Math.max(0, p.stockLevel - soldItem.quantity) 
-        };
-      }
-      return p;
+    const { data, error } = await supabase.functions.invoke('record-transaction', {
+      body: { transaction: tx },
     });
-    saveProducts(newProducts);
-  };
 
-  const toggleAttendance = async (userId: string) => {
-    const userIndex = users.findIndex(u => u.id === userId);
-    if (userIndex === -1) return;
-    const user = users[userIndex];
-    
-    const now = new Date();
-    const timestamp = now.toISOString();
-    
-    let newAttendance = [...attendance];
-    const updatedUser = { ...user };
-
-    if (user.isClockedIn) {
-      // Clock Out
-      const openRecordIndex = newAttendance.findIndex(r => r.userId === userId && !r.clockOutTime);
-      
-      if (openRecordIndex !== -1) {
-        const record = { ...newAttendance[openRecordIndex] };
-        const startTime = new Date(record.clockInTime);
-        const totalMs = now.getTime() - startTime.getTime();
-        const totalHours = parseFloat((totalMs / (1000 * 60 * 60)).toFixed(2));
-
-        record.clockOutTime = timestamp;
-        record.totalHours = totalHours;
-        
-        newAttendance[openRecordIndex] = record;
-      }
-
-      updatedUser.isClockedIn = false;
-      // updatedUser.lastClockIn can remain as last known or be cleared. 
-      // Keeping it reflects the record.
-    } else {
-      // Clock In
-      const newRecord: AttendanceRecord = {
-        id: Date.now().toString(),
-        userId: user.id,
-        userName: user.name,
-        date: now.toLocaleDateString(),
-        clockInTime: timestamp,
-      };
-      // Add to front
-      newAttendance = [newRecord, ...newAttendance];
-
-      updatedUser.isClockedIn = true;
-      updatedUser.lastClockIn = timestamp;
+    if (error) {
+      console.error('Error recording transaction:', error);
+      return;
     }
-
-    // Sort attendance again just in case, though prepending maintains order if strictly time-based
-    saveAttendanceRecords(newAttendance);
     
-    const newUsers = [...users];
-    newUsers[userIndex] = updatedUser;
-    saveUsers(newUsers);
+    // Manually update the local state for now
+    // Later, this will be handled by real-time subscriptions
+    loadData();
   };
+
 
   // --- CRUD Operations ---
 
   const addUser = async (user: User) => {
-    const newUsers = [...users, user];
-    saveUsers(newUsers);
+    const { data, error } = await supabase.from('users').insert(user).select();
+    if (error) {
+      console.error('Error adding user:', error);
+      return;
+    }
+    setUsers([...users, ...data]);
   };
 
   const updateUser = async (user: User) => {
-    const newUsers = users.map(u => u.id === user.id ? user : u);
-    saveUsers(newUsers);
+    const { data, error } = await supabase.from('users').update(user).eq('id', user.id).select();
+    if (error) {
+      console.error('Error updating user:', error);
+      return;
+    }
+    setUsers(users.map(u => u.id === user.id ? data[0] : u));
   };
 
   const removeUser = async (userId: string) => {
-    const newUsers = users.filter(u => u.id !== userId);
-    saveUsers(newUsers);
+    const { error } = await supabase.from('users').delete().eq('id', userId);
+    if (error) {
+      console.error('Error removing user:', error);
+      return;
+    }
+    setUsers(users.filter(u => u.id !== userId));
   };
 
   const addProduct = async (product: Product) => {
-    const newProducts = [...products, product];
-    saveProducts(newProducts);
+    const { data, error } = await supabase.from('products').insert(product).select();
+    if (error) {
+      console.error('Error adding product:', error);
+      return;
+    }
+    setProducts([...products, ...data]);
   };
 
   const updateProduct = async (product: Product) => {
-    const newProducts = products.map(p => p.id === product.id ? product : p);
-    saveProducts(newProducts);
+    const { data, error } = await supabase.from('products').update(product).eq('id', product.id).select();
+    if (error) {
+      console.error('Error updating product:', error);
+      return;
+    }
+    setProducts(products.map(p => p.id === product.id ? data[0] : p));
   };
 
   const deleteProduct = async (productId: string) => {
-    const newProducts = products.filter(p => p.id !== productId);
-    saveProducts(newProducts);
+    const { error } = await supabase.from('products').delete().eq('id', productId);
+    if (error) {
+      console.error('Error deleting product:', error);
+      return;
+    }
+    setProducts(products.filter(p => p.id !== productId));
   };
 
   const initializeDatabase = async () => {
-    // Reset to defaults
-    setLoading(true);
-    saveUsers(MOCK_USERS);
-    saveProducts(MOCK_CATALOG);
-    saveTransactions([]);
-    saveAttendanceRecords([]);
-    setLoading(false);
+    // This will be handled by seeding the Supabase database directly.
   };
 
   return (
@@ -257,7 +273,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       login,
       logout,
       recordTransaction,
-      toggleAttendance,
       addUser,
       updateUser,
       removeUser,

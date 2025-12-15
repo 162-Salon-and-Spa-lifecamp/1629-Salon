@@ -20,9 +20,10 @@ const LoginScreen: React.FC = () => {
     }
   }, [users, selectedUser]);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!login(selectedUser, pin)) {
+    const success = await login(selectedUser, pin);
+    if (!success) {
       setLoginError('Invalid PIN');
     }
   };
