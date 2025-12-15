@@ -1,0 +1,7 @@
+{
+  "name": "SalonSync",
+  "description": "A comprehensive management system for multi-service beauty and wellness businesses, featuring secure attendance tracking, POS, and inventory management.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
