@@ -1,10 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useStore } from '../services/StoreContext';
+import { supabase } from '../services/supabase';
 import { Camera, CheckCircle, XCircle } from 'lucide-react';
-import { QRCodeData } from '../types';
 
 export const AttendanceScanner: React.FC = () => {
-  const { toggleAttendance, users, currentUser } = useStore();
+  const { currentUser } = useStore();
   const [scanning, setScanning] = useState(false);
   const [lastResult, setLastResult] = useState<{ success: boolean; message: string } | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -30,35 +30,34 @@ export const AttendanceScanner: React.FC = () => {
     };
   }, [scanning]);
 
-  const handleSimulateScan = () => {
+  const handleSimulateScan = async () => {
     if (!currentUser) return;
     
     setScanning(false);
     
-    // Simulate reading the SHARED TERMINAL QR code from the manager screen
-    // The ID 'SALON_TERMINAL' matches what is generated in BarcodeDisplay.tsx
-    const mockQRData: QRCodeData = {
-      userId: 'SALON_TERMINAL',
-      timestamp: Date.now(),
-      validUntil: Date.now() + (20 * 60 * 1000), // 20 mins
-      signature: 'valid_sig'
-    };
-
-    // Validation: We verify the scanned code identifies the official Salon Terminal
-    if (mockQRData.userId === 'SALON_TERMINAL') {
-      // We use the CURRENT USER'S ID to perform the action, not the ID in the QR code.
-      // The QR code just proves location/presence.
-      toggleAttendance(currentUser.id);
+    // In a real application, you would use a QR code scanning library
+    // to get the token from the QR code.
+    // For this demo, we'll fetch the latest valid token from the database.
+    const { data: qrData, error: qrError } = await supabase
+      .from('qr_tokens')
+      .select('token')
+      .order('expires_at', { ascending: false })
+      .limit(1)
+      .single();
       
-      const isNowClockedIn = !users.find(u => u.id === currentUser.id)?.isClockedIn;
-      setLastResult({
-        success: true,
-        message: isNowClockedIn 
-          ? `Success! Welcome back, ${currentUser.name}. You are Clocked In.` 
-          : `Success! Goodbye, ${currentUser.name}. You are Clocked Out.`
-      });
+    if (qrError || !qrData) {
+      setLastResult({ success: false, message: 'Could not find a valid QR token.' });
+      return;
+    }
+
+    const { data, error } = await supabase.functions.invoke('scan-qr-token', {
+      body: { userId: currentUser.id, token: qrData.token },
+    });
+
+    if (error) {
+      setLastResult({ success: false, message: error.message });
     } else {
-      setLastResult({ success: false, message: 'Invalid QR Code. Please scan the official Terminal Code.' });
+      setLastResult({ success: true, message: 'Attendance recorded successfully.' });
     }
   };
 
