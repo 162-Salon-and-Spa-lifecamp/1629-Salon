@@ -50,7 +50,7 @@ const LoginScreen: React.FC = () => {
           <h1 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Connection Error</h1>
           <p className="text-slate-500 dark:text-slate-400 mb-6">{error}</p>
           <div className="bg-slate-50 dark:bg-slate-900 p-4 rounded-lg text-left text-xs text-slate-600 dark:text-slate-300 font-mono overflow-auto max-h-40 border border-slate-200 dark:border-slate-700">
-             Technical Details: Ensure Firestore Database is created in your Firebase Console (Test Mode) and rules allow read/write.
+             Technical Details: Ensure you have run the `schema.sql` script in your Supabase SQL Editor and that your `.env` file contains the correct `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
           </div>
           <button 
              onClick={() => window.location.reload()}
